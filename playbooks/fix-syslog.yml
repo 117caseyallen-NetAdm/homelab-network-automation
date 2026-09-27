@@ -1,0 +1,50 @@
+---
+# Payload 2: forward syslog to the collector on CA-TAC-LAB.
+#
+#   ansible-playbook playbooks/fix-syslog.yml --ask-vault-pass --check --diff
+#
+# The C2940's parser was asked BEFORE this was written: 12.1(22)EA13 has no
+# "host" keyword, only "logging <ip>". --check would not have caught a wrong
+# guess - it never asks the device. has_logging_host_keyword is in host_vars.
+
+- name: Forward syslog to the collector (IOS)
+  hosts: ios
+  gather_facts: false
+  vars_files:
+    - ../vault/deploy.yml
+
+  vars:
+    ansible_user: "{{ deploy_user }}"
+    ansible_password: "{{ deploy_password }}"
+    logging_line: "logging {{ 'host ' if (has_logging_host_keyword | default(true)) else '' }}{{ baseline.syslog_host }}"
+  tasks:
+    - name: Point syslog at the collector
+      cisco.ios.ios_config:
+        lines:
+          - "{{ logging_line }}"
+        save_when: modified
+      register: syslog_ios
+
+    - name: Show the command sent
+      ansible.builtin.debug:
+        var: syslog_ios.commands
+
+- name: Forward syslog to the collector (EOS)
+  hosts: eos
+  gather_facts: false
+  vars_files:
+    - ../vault/deploy.yml
+  vars:
+    ansible_user: "{{ deploy_user }}"
+    ansible_password: "{{ deploy_password }}"
+  tasks:
+    - name: Point syslog at the collector
+      arista.eos.eos_config:
+        lines:
+          - "logging host {{ baseline.syslog_host }}"
+        save_when: modified
+      register: syslog_eos
+
+    - name: Show the command sent
+      ansible.builtin.debug:
+        var: syslog_eos.commands

@@ -1,0 +1,12 @@
+# Device facts contain serial numbers - keep local
+facts/
+# Ansible noise
+*.retry
+__pycache__/
+.vault_pass
+# Never commit collected configs or secrets
+configs/
+*.key
+# The encrypted vault is committed to the PRIVATE working repo only. It never
+# comes here, even encrypted - see vault/deploy.yml.example.
+vault/deploy.yml

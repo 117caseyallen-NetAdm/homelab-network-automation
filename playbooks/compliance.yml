@@ -1,0 +1,110 @@
+---
+# Read-only. Asserts the AAA baseline on IOS 15.x, IOS 12.1, EOS and Junos.
+# Nothing in this playbook can change a device.
+#
+#   ansible-playbook playbooks/compliance.yml --ask-pass
+#   ansible-playbook playbooks/compliance.yml --ask-pass -e compliance_gate=true
+#
+# Every check is PASS, FAIL or EXCEPTION. An exception is a failure accepted
+# in writing in inventory/host_vars/<device>.yml, with a reason and an expiry.
+# Expired exceptions become failures again. An exception whose check has
+# started passing is reported as STALE, because exceptions nobody removes are
+# how a compliance report quietly stops being read.
+
+- name: Assert the AAA baseline
+  hosts: ios:eos:junos
+  gather_facts: false
+  vars:
+    today: "{{ '%Y-%m-%d' | strftime }}"
+
+  tasks:
+    - name: Read the device configuration
+      ansible.builtin.include_tasks: tasks/read-config.yml
+
+    - name: Evaluate every check for this platform
+      vars:
+        exc: "{{ compliance_exceptions | default([]) | selectattr('name', 'eq', item.name) | list }}"
+        hit: "{{ (cfg is search(item.regex)) == ((item.expect | default('present')) == 'present') }}"
+      ansible.builtin.set_fact:
+        results: >-
+          {{ results | default([]) + [ {
+               'name':    item.name,
+               'ok':      hit | bool,
+               'excused': (exc | length > 0) and ((exc[0].expires | default('9999-12-31')) >= today),
+               'stale':   (exc | length > 0) and (hit | bool)
+             } ] }}
+      loop: "{{ compliance_checks }}"
+      loop_control:
+        label: "{{ item.name }}"
+
+    - name: IOS / EOS - read the startup configuration
+      ansible.netcommon.cli_command:
+        command: show startup-config
+      register: startup_raw
+      when: platform in ['ios', 'eos']
+      no_log: "{{ not (debug_config | default(false) | bool) }}"
+
+    # An audit that reads only running-config can be fooled: a change applied
+    # and never saved passes, then vanishes on the next reload. That happened
+    # on 2026-09-26 when a config task failed halfway and save_when never ran.
+    #
+    # The noise list is OBSERVED, not guessed, from three saved devices:
+    #   running-config only:  "Building configuration...", "Current configuration : N bytes"
+    #   startup-config only:  "Using N out of N bytes"
+    #   drifts constantly:    "ntp clock-period N"  -- on the C2940 only
+    - name: Assert the running config has been saved
+      vars:
+        noise: '(Building configuration|Current configuration|Using [0-9]+ out of|ntp clock-period|!)'
+        run_lines: "{{ cfg.splitlines() | map('trim') | reject('eq', '') | reject('match', noise) | list }}"
+        start_lines: "{{ startup_raw.stdout.splitlines() | map('trim') | reject('eq', '') | reject('match', noise) | list }}"
+      ansible.builtin.set_fact:
+        results: >-
+          {{ results + [ {
+               'name':    'Running config is saved to startup',
+               'ok':      (run_lines | symmetric_difference(start_lines) | length) == 0,
+               'excused': false,
+               'stale':   false
+             } ] }}
+      when: platform in ['ios', 'eos']
+
+    - name: Report this device
+      vars:
+        failed: "{{ results | rejectattr('ok') | rejectattr('excused') | map(attribute='name') | list }}"
+        excused: "{{ results | rejectattr('ok') | selectattr('excused') | map(attribute='name') | list }}"
+        stale: "{{ results | selectattr('stale') | map(attribute='name') | list }}"
+      ansible.builtin.debug:
+        msg: >-
+          {{ results | selectattr('ok') | list | length }}/{{ results | length }} passed.
+          {% if failed %}FAIL: {{ failed | join('; ') }}.{% endif %}
+          {% if excused %}EXCEPTION: {{ excused | join('; ') }}.{% endif %}
+          {% if stale %}STALE EXCEPTION, check now passes, remove it: {{ stale | join('; ') }}.{% endif %}
+
+- name: Fleet summary
+  hosts: localhost
+  connection: local
+  gather_facts: false
+  vars:
+    fleet: "{{ (groups['ios'] | default([])) + (groups['eos'] | default([])) + (groups['junos'] | default([])) }}"
+
+  tasks:
+    - name: Print the fleet table
+      ansible.builtin.debug:
+        msg: |-
+          {% for h in fleet %}
+          {% set r = hostvars[h].results | default([]) %}
+          {% set f = r | rejectattr('ok') | rejectattr('excused') | map(attribute='name') | list %}
+          {% set e = r | rejectattr('ok') | selectattr('excused') | list | length %}
+          {% set p = r | selectattr('ok') | list | length %}
+          {{ "%-16s" | format(h) }} {{ p }}/{{ r | length }} pass  {{ f | length }} fail  {{ e }} excepted   {{ f | join(', ') }}
+          {% endfor %}
+
+    - name: Gate the run if asked to
+      ansible.builtin.assert:
+        that:
+          # A host with no results was never audited. Absence of failures is
+          # not evidence of compliance - demand that checks actually ran.
+          - hostvars[item].results | default([]) | length > 0
+          - hostvars[item].results | default([]) | rejectattr('ok') | rejectattr('excused') | list | length == 0
+        fail_msg: "{{ item }} is not compliant, or could not be audited"
+      loop: "{{ fleet }}"
+      when: compliance_gate | default(false) | bool

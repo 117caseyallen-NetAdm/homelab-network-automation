@@ -1,0 +1,30 @@
+---
+platform: junos
+
+compliance_checks:
+  - name: TACACS+ points at the lab server
+    regex: '(?m)^set system tacplus-server {{ baseline.tacacs_server | regex_escape }}'
+  - name: TACACS+ is first in the authentication order
+    regex: '(?m)^set system authentication-order tacplus'
+  # homelab-tacacs-aaa finding 1 - leaving "password" in the order made Junos fall through
+  # to local auth on an explicit REJECT. Absence of this line IS the fix.
+  - name: Local password is NOT in the authentication order
+    regex: '(?m)^set system authentication-order password'
+    expect: absent
+  - name: Accounting is sent to TACACS+
+    regex: '(?m)^set system accounting destination tacplus'
+  # homelab-tacacs-aaa finding 4 - without this the SRX egressed via the IPsec tunnel and
+  # the server rejected it as an unknown host. Configured != working.
+  - name: Accounting has an explicit source address
+    regex: '(?m)^set system accounting destination tacplus server \S+ source-address'
+  - name: A local break-glass account exists
+    regex: '(?m)^set system login user \S+ authentication encrypted-password'
+  - name: SSH is enabled
+    regex: '(?m)^set system services ssh'
+  - name: Telnet is not enabled
+    regex: '(?m)^set system services telnet'
+    expect: absent
+  - name: Syslog goes to the collector
+    regex: '(?m)^set system syslog host {{ baseline.syslog_host | regex_escape }}'
+  - name: NTP server is configured
+    regex: '(?m)^set system ntp server {{ baseline.ntp_server | regex_escape }}'

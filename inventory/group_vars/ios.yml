@@ -1,0 +1,65 @@
+---
+platform: ios
+
+compliance_checks:
+  - name: AAA is enabled
+    regex: '(?m)^aaa new-model'
+  - name: Login authenticates to the TACACS+ group
+    regex: '(?m)^aaa authentication login default group {{ baseline.tacacs_group }} local'
+  - name: Console has its own local method list
+    regex: '(?m)^aaa authentication login CONSOLE local'
+  - name: Commands are authorized by the TACACS+ group
+    regex: '(?m)^aaa authorization commands 15 default group {{ baseline.tacacs_group }}'
+  # if-authenticated is what keeps an already-open session alive when the
+  # server goes away. EOS has no equivalent, which is why this is IOS-only.
+  - name: Open sessions survive a TACACS+ outage
+    regex: '(?m)^aaa authorization commands 15 default .*if-authenticated'
+  - name: Commands are accounted to the TACACS+ group
+    regex: '(?m)^aaa accounting commands 15 default start-stop group {{ baseline.tacacs_group }}'
+  # 15.x: "address ipv4" under a named server block.
+  # 12.1: "server <ip>" under the group, plus "tacacs-server host <ip>".
+  - name: The group points at the lab server
+    regex: '(?m)^\s*(address ipv4|server|tacacs-server host) {{ baseline.tacacs_server | regex_escape }}'
+  - name: A local break-glass account exists
+    regex: '(?m)^username \S+ (secret|privilege)'
+  # Left over from before TACACS+. Should have been removed with the rotation.
+  - name: No leftover Administrator account
+    regex: '(?m)^username Administrator'
+    expect: absent
+  # Type 5 is MD5. The baseline is type 8/9. The 2003 image supports neither,
+  # so this is EXPECTED to fail on the C2940 - an accepted exception, recorded
+  # as a failing check rather than as nothing at all.
+  - name: Local secrets are not type 5 (MD5)
+    regex: '(?m)^(username \S+ .*|enable )secret 5 '
+    expect: absent
+  - name: Enable secret is set
+    regex: '(?m)^enable secret'
+  - name: VTY accepts SSH
+    regex: '(?m)^\s*transport input ssh\s*$'
+  - name: VTY refuses telnet
+    regex: '(?m)^\s*transport input .*(telnet|all)'
+    expect: absent
+  - name: SSH version 2 only
+    regex: '(?m)^ip ssh version 2'
+  - name: HTTP server is disabled
+    regex: '(?m)^ip http server'
+    expect: absent
+  # No device forwards syslog today. Command history is covered by TACACS+
+  # accounting, but system events (link flaps, auth failures, config saves)
+  # live only in a volatile local buffer.
+  - name: Syslog is forwarded to the collector
+    regex: '(?m)^logging (host )?{{ baseline.syslog_host | regex_escape }}'
+  - name: NTP server is configured
+    regex: '(?m)^ntp server {{ baseline.ntp_server | regex_escape }}'
+  # Without this, "aaa authorization commands 15" covers EXEC commands only.
+  # Proven 2026-09-26: config-mode commands were never sent to the server at
+  # all, so a deploy account permitted "configure terminal" was effectively
+  # root. Nothing in the config says so - the line is simply absent.
+  - name: Config-mode commands are authorized
+    regex: '(?m)^aaa authorization config-commands'
+  # Separate line from "ip http server" - enabling only HTTPS would have
+  # passed the check above. Trivially true on the C2940, whose parser has
+  # no HTTPS server at all.
+  - name: HTTPS server is disabled
+    regex: '(?m)^ip http secure-server'
+    expect: absent

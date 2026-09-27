@@ -1,0 +1,34 @@
+---
+- name: Inventory the fleet (read-only)
+  hosts: ios:eos:junos
+  gather_facts: false
+
+  tasks:
+    - name: Gather facts (IOS)
+      cisco.ios.ios_facts: { gather_subset: ['min', 'hardware', 'interfaces'] }
+      when: ansible_network_os == 'cisco.ios.ios'
+
+    - name: Gather facts (EOS)
+      arista.eos.eos_facts: { gather_subset: ['min', 'hardware', 'interfaces'] }
+      when: ansible_network_os == 'arista.eos.eos'
+
+    - name: Gather facts (Junos)
+      juniper.device.junos_facts: { gather_subset: ['min', 'interfaces'] }
+      when: ansible_network_os == 'junipernetworks.junos.junos'
+
+    # No serial number in this line: once this runs under CI, the job log is
+    # stored, and serials do not belong in it. facts/ is gitignored for the same reason.
+    - name: One line per device
+      ansible.builtin.debug:
+        msg: >-
+          {{ ansible_net_hostname | default(inventory_hostname) }} /
+          {{ ansible_net_model | default('?') }} /
+          {{ ansible_net_version | default('?') }} /
+          {{ ansible_net_interfaces | default({}) | length }} interfaces
+
+    - name: Save per-device facts as JSON
+      ansible.builtin.copy:
+        content: "{{ ansible_facts | to_nice_json }}"
+        dest: "/opt/netauto/facts/{{ inventory_hostname }}.json"
+        mode: '0600'
+      delegate_to: localhost

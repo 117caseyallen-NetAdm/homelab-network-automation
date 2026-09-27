@@ -1,0 +1,27 @@
+---
+platform: eos
+
+# EOS has no if-authenticated, so there is no session-survival check here.
+# The local fallback account is the entire outage plan on this box.
+compliance_checks:
+  - name: Login authenticates to the TACACS+ group
+    regex: '(?m)^aaa authentication login default group {{ baseline.tacacs_group }} local'
+  - name: Console has its own local method list
+    regex: '(?m)^aaa authentication login console local'
+  - name: Commands are authorized by the TACACS+ group
+    regex: '(?m)^aaa authorization commands all default group {{ baseline.tacacs_group }}'
+  - name: Commands are accounted to the TACACS+ group
+    regex: '(?m)^aaa accounting commands all default start-stop group {{ baseline.tacacs_group }}'
+  - name: TACACS+ points at the lab server
+    regex: '(?m)^tacacs-server host {{ baseline.tacacs_server | regex_escape }}'
+  - name: A local break-glass account exists
+    regex: '(?m)^username \S+ privilege 15'
+  - name: SSH is enabled
+    regex: '(?m)^management ssh'
+  - name: Telnet is not enabled
+    regex: '(?m)^management telnet'
+    expect: absent
+  - name: Syslog is forwarded to the collector
+    regex: '(?m)^logging host {{ baseline.syslog_host | regex_escape }}'
+  - name: NTP server is configured
+    regex: '(?m)^ntp server {{ baseline.ntp_server | regex_escape }}'

@@ -1,0 +1,21 @@
+---
+# Accepted deviations from the baseline. Each needs a reason and a date.
+# On the expiry date it becomes a failure again, so no exception quietly
+# lives forever. Quote the date - unquoted, YAML turns it into a date
+# object and the string comparison breaks.
+compliance_exceptions:
+  - name: Local secrets are not type 5 (MD5)
+    reason: >-
+      IOS 12.1(22)EA13 supports neither type 8 (PBKDF2) nor type 9 (scrypt).
+      No upgrade path exists for this hardware. Mitigated by access-list 10,
+      which restricts management access to four source ranges.
+    expires: "2027-09-24"
+
+# IOS 12.1(22)EA13 has no HTTPS management server. The command does not exist
+# in the parser, so it must not be sent - this is a capability gap, not a
+# compliance exception, which is why it is a variable rather than an entry in
+# compliance_exceptions.
+has_http_secure_server: false
+
+# IOS 12.1(22)EA13 has no "host" keyword - the syntax is "logging <ip>".
+has_logging_host_keyword: false

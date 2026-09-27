@@ -1,0 +1,12 @@
+---
+# The shape of vault/deploy.yml, which the fix-* playbooks load. The real file
+# holds the deploy account's credential and lives only in the private working
+# repository - never here, not even encrypted, because a published vault is an
+# invitation to attack the passphrase offline.
+#
+# Create the real one without the plaintext ever touching disk:
+#   EDITOR=nano ansible-vault create vault/deploy.yml
+# then paste the two lines below with real values, and store the vault
+# passphrase in a password manager.
+deploy_user: svc-ansible-rw
+deploy_password: CHANGE_ME

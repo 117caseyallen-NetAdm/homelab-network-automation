@@ -1,0 +1,53 @@
+---
+# The first write operation in this repository.
+#
+#   Dry run first, one device:
+#     ansible-playbook playbooks/fix-http-server.yml --ask-vault-pass \
+#       --check --diff --limit 3560CG-2
+#   Then for real by dropping --check.
+#
+# Authenticates as svc-ansible-rw, whose TACACS+ profile permits a short
+# allowlist and nothing else. If this playbook ever asks for something off
+# that list, CA-TAC-LAB refuses it. The playbook is not the boundary.
+#
+# No rollback timer on this one, deliberately: "no ip http server" cannot
+# cut the SSH path we are connected over. A change touching VTY lines, an
+# ACL or routing would need "archive" + "configure terminal revert timer".
+
+- name: Disable the IOS HTTP server
+  hosts: ios
+  gather_facts: false
+
+  vars_files:
+    - ../vault/deploy.yml
+
+  vars:
+    ansible_user: "{{ deploy_user }}"
+    ansible_password: "{{ deploy_password }}"
+
+  tasks:
+    - name: Turn off the HTTP server
+      cisco.ios.ios_config:
+        lines:
+          - no ip http server
+        save_when: modified
+      register: http_off
+
+    # IOS 12.1(22)EA13 has no HTTPS management server - the command does not
+    # exist in its parser. Sent as part of one task it aborted with the first
+    # line ALREADY APPLIED, because IOS configuration is not transactional,
+    # and save_when never ran. has_http_secure_server lives in host_vars.
+    #
+    # --check did not catch this: check mode computes the diff locally and
+    # never asks the device whether a command is valid.
+    - name: Turn off the HTTPS server
+      cisco.ios.ios_config:
+        lines:
+          - no ip http secure-server
+        save_when: modified
+      when: has_http_secure_server | default(true)
+      register: https_off
+
+    - name: Show the commands that were sent
+      ansible.builtin.debug:
+        msg: "{{ (http_off.commands | default([])) + (https_off.commands | default([])) }}"

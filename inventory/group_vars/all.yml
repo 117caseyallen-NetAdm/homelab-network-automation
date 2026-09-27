@@ -1,0 +1,8 @@
+---
+# The AAA baseline this repository audits - what the TACACS+ build
+# (homelab-tacacs-aaa) configured. Change what "compliant" means here, once.
+baseline:
+  tacacs_server: 10.99.20.32   # CA-TAC-LAB
+  tacacs_group: TAC-GROUP      # the named AAA server group, same on every device
+  syslog_host: 10.99.20.32     # same box, rsyslog collector
+  ntp_server: 10.20.2.5        # DC
